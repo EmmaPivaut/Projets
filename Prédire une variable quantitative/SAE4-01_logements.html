@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<hr />
+<p>title: &quot;Explication et prédiction des prix de ventes des logements dans le comté de King aux Etats-Unis&quot; subtitle: &quot;SAE 4-01 (EMS) : Expliquer ou prédire une variable quantitative à partir de plusieurs facteurs&quot; author: &quot;GUIZIOU Léna, DOUILLARD Thibeault, PIVAUT Emma, LESSARD-PRIGENT Titouan&quot; date: &#39;<code>r format(Sys.Date(),&quot;%d/%m/%Y&quot;)</code>&#39; output: rmdformats::material ---</p>
+<h1>1 Description des données et chargements des packages utiles</h1>
+<p>Les sociétés immobilières en ligne proposent des évaluations de maisons en utilisant des techniques d&#39;apprentissage automatique. L&#39;objectif de ce projet est de prédire les ventes de maisons dans le comté de King, dans l&#39;État de Washington, aux États-Unis, en utilisant la régression linéaire multiple . L&#39;ensemble des données est constitué de données historiques de maisons vendues entre mai 2014 et mai 2015.</p>
+<p>Le jeu de données se compose des prix des maisons du comté de King, une région de l&#39;État américain de Washington, ces données couvrent également Seattle. Le jeu de données a été obtenu sur Kaggle. Ces données ont été publiées/diffusées sous CC0 : Public Domain. Malheureusement, l&#39;utilisateur n&#39;a pas indiqué la source des données. Le dictionnaire des données est donné en annexe dans le rapport. L&#39;ensemble de données se composait de 21 variables et de 21613 observations. Pour une analyse et un traitement plus rapide, nous avons pris un échantillon de 7000 id, aléatoirement.</p>
+<p><strong>Bibliothèques de fonctions utiles</strong></p>
+<p><code>{r} #Chargement des packages  library(skimr) # stat desc library(forcats) # pour les facteurs library(olsrr) # outils pour les modèles linéaires library(readxl) # ouvrir les données d&#39;un fichier Excel library(tidyverse)  library(ggplot2)  library(corrplot) library(leaps) library(car) library(Metrics) library(&quot;broom.helpers&quot;)</code></p>
+<h1>2 Import et préparation des données</h1>
+<p><strong>Import des données</strong> ```{r}</p>
+<h1>Import et visualisation des données</h1>
+<p>logement = read<em>xlsx(&quot;kc</em>house_data.xlsx&quot;)</p>
+<h1>Taille échantillon observé</h1>
+<p>n=nrow(logement) n <code>**Structures des données**</code>{r}</p>
+<h1>Vérification du type des variables</h1>
+<p>str(logement) ```</p>
+<p><strong>Préparation des données</strong> <code>{r} #Transformation de l&#39;unité des variables sqft_living et sqft_lot (en m²) indice_metre2 = 0.09290304 logement$sqft_living = round(logement$sqft_living*indice_metre2, digits = 2) logement$sqft_lot = round(logement$sqft_lot*indice_metre2, digits = 2)</code></p>
+<p><code>{r} #Transformation de la variable id (numéro des logements) en caractère logement$id = as.character(logement$id)</code></p>
+<p>```{r}</p>
+<h1>Renommage des variables qualitatives</h1>
+<h1>Variable waterfront</h1>
+<p>logement$waterfront<em>ren &lt;- as.factor(case</em>when(logement$waterfront == 1 ~ &quot;vue sur mer&quot;, logement$waterfront == 0 ~ &quot;pas de vue sur mer&quot; ) )</p>
+<h1>Variable view</h1>
+<p>logement$view<em>ren &lt;- as.factor(case</em>when(logement$view == 0 ~ &quot;très mauvaise qualité&quot;, logement$view == 1 ~ &quot;mauvaise qualité&quot;, logement$view == 2 ~ &quot;moyenne qualité&quot;, logement$view == 3 ~ &quot;bonne qualité&quot;, logement$view == 4 ~ &quot;très bonne qualité&quot; ) )</p>
+<h1>Variable condition</h1>
+<p>logement$condition<em>ren &lt;- as.factor(case</em>when(logement$condition == 1 ~ &quot;très mauvais état&quot;, logement$condition == 2 ~ &quot;mauvais état&quot;, logement$condition == 3 ~ &quot;moyen état&quot;, logement$condition == 4 ~ &quot;bon état&quot;, logement$condition == 5 ~ &quot;très bon état&quot; ) )</p>
+<h1>Variable yr_renovated</h1>
+<p>logement$yr<em>renovated &lt;- ifelse(logement$yr</em>renovated == 0, 0, 1) logement$yr<em>renovated</em>ren &lt;- as.factor(ifelse(logement$yr_renovated == 0, &quot;Pas rénové&quot;, &quot;Rénové&quot;))</p>
+<p>```</p>
+<h1>3 Vérification de la structure des données</h1>
+<p><strong>Structures des données</strong> ```{r}</p>
+<h1>Vérification du type des variables</h1>
+<p>str(logement)</p>
+<h1>Sommaire du jeu de données</h1>
+<p>summary(logement)</p>
+<h1>Statistiques générales pour chaque variables</h1>
+<p>skim(logement) ```</p>
+<p><strong>Structure et modification de la variable à expliquer</strong> <code>{r} #Répartition des prix hist(logement$price, main = &quot;Répartition des prix des logements&quot;, ylab = &quot;Nombre de logements&quot;, xlab = &quot;Prix des logements&quot;, col = &quot;Darkblue&quot;)</code></p>
+<p>Il a une forme de décroissance exponentielle, donc difficile d&#39;analyser les résultats (et résidus) Etudier le log du prix qui est plus facile à étudier Lors de la prédiction on utiliera l&#39;exponentiel car on trouvera le log_price hors on veut le prix</p>
+<p><code>{r} #Création d&#39;une variable correspondant au logarithme des prix logement$log_price &lt;- log(logement$price) hist(logement$log_price, main = &quot;Répartition des logarithmes des prix des logements&quot;, ylab = &quot;Nombre de logements&quot;, xlab = &quot;Logarithme du prix des logements&quot;, col = &quot;Darkblue&quot;)</code></p>
+<h1>4 Analyse des corrélations</h1>
+<p>```{r}</p>
+<h1>Création de la matrice de corrélation entre toutes las variables</h1>
+<p>matriceCor &lt;- cor(subset(logement,select = c(log<em>price,bedrooms,bathrooms,floors,condition,grade,sqft</em>living,sqft<em>lot,waterfront,view,yr</em>built,yr_renovated), method =c(&quot;pearson&quot;)))</p>
+<p>```</p>
+<p>```{r}</p>
+<h1>Observation de la corrélation entre les variables grâce à des graphiques</h1>
+<p>corrplot(matriceCor, type = &quot;upper&quot;, order = &quot;original&quot;, tl.col = &quot;black&quot;, tl.srt = 45)</p>
+<p>```</p>
+<h1>5 Création des modélisations simples</h1>
+<p>**Observation de la répartition des individus en fonction du log_price** ```{r}</p>
+<h1>vecteur de variables</h1>
+<p>variables1 &lt;- c(&quot;bedrooms&quot;, &quot;bathrooms&quot;, &quot;sqft<em>living&quot;, &quot;sqft</em>lot&quot;, &quot;floors&quot;, &quot;grade&quot;, &quot;yr<em>built&quot;, &quot;yr</em>renovated&quot;, &quot;waterfront&quot;, &quot;view&quot;, &quot;condition&quot;)</p>
+<h1>boucle pour ajuster un modèle pour chaque variable et tracer le graphique correspondant</h1>
+<p>for (i in seq<em>along(variables1)) { # sélectionner la variable actuelle current</em>variable &lt;- variables1[i]</p>
+<p># ajuster un modèle de régression linéaire pour la variable actuelle model &lt;- lm(log<em>price ~ get(current</em>variable), data = logement)</p>
+<p># tracer le graphique en utilisant la variable &quot;log<em>price&quot; et la variable actuelle plot(log</em>price ~ get(current<em>variable), data = logement, col = &quot;darkblue&quot;, main = paste(&quot;Graphique pour&quot;, current</em>variable))</p>
+<p># ajouter la ligne de régression linéaire correspondante abline(model, col = &quot;darkred&quot;, lty = 1, lwd = 2) } ```</p>
+<h1>6 Création des modèles multiples</h1>
+<p><strong>Création de modèles avec toutes les variables</strong> ```{r}</p>
+<h1>Modèle avec la constante</h1>
+<p>intercept<em>only &lt;- lm(log</em>price~1, data = logement) summary(intercept_only)</p>
+<h1>Modèle avec toutes les variables</h1>
+<p>modeleAll &lt;- lm(log<em>price~bedrooms+bathrooms+sqft</em>living+sqft<em>lot+floors+waterfront+view+condition+grade+yr</em>built+yr_renovated, data = logement) summary(modeleAll)</p>
+<p>```</p>
+<p><code>{r} #VIF vif(modeleAll)</code></p>
+<p>```{r}</p>
+<h1>BIC</h1>
+<h1>Analyse de sous-ensemble de variables avec la fonction regsubsets, en utilisant le critère BIC</h1>
+<p>subset &lt;- regsubsets(log<em>price~bedrooms+sqft</em>living+bathrooms+sqft<em>lot+floors+waterfront+view+condition+grade+yr</em>built+yr_renovated, data = logement, nvmax = 10, method = &quot;exhaustive&quot;)</p>
+<h1>Graphique de l&#39;évolution du critère BIC en fonction du nombre de variables incluses dans le modèle</h1>
+<p>plot(subset, scale = &quot;bic&quot;, main = &quot;Évolution du critère BIC en fonction du nombre de variables&quot;, xlab = &quot;Nombre de variables&quot;, ylab = &quot;BIC&quot;) ```</p>
+<p><code>{r} #Modèles choisis modele1 &lt;- lm(log_price~bedrooms + sqft_living + bathrooms + floors + waterfront + view + condition + grade + yr_built, data = logement) summary(modele1) modele2 &lt;- lm(log_price~ bathrooms + sqft_living + floors + waterfront + view + grade + yr_built, data = logement) summary(modele2) modele3 &lt;- lm(log_price~ sqft_living + floors + view + grade + yr_built, data = logement) summary(modele3)</code></p>
+<p><code>{r} anova(modele1, modeleAll) anova(modele2, modeleAll) anova(modele3, modeleAll)</code></p>
+<p><strong>Analyses des modèles</strong> <code>{r} #Distance de Cook cooks1 &lt;- cooks.distance(modele1) plot(cooks1, pch = 20, cex = 1.5, col = ifelse(high_cooksd, &quot;red&quot;, &quot;black&quot;),         main = paste(&quot;Distance de Cook pour le modèle 1&quot;)) cooks2 &lt;- cooks.distance(modele2) plot(cooks2, pch = 20, cex = 1.5, col = ifelse(high_cooksd, &quot;red&quot;, &quot;black&quot;),         main = paste(&quot;Distance de Cook pour le modèle 2&quot;)) cooks3 &lt;- cooks.distance(modele3) plot(cooks3, pch = 20, cex = 1.5, col = ifelse(high_cooksd, &quot;red&quot;, &quot;black&quot;),         main = paste(&quot;Distance de Cook pour le modèle 3&quot;))</code></p>
+<p><code>{r} #Analyse des résidus ols_plot_resid_stud_fit(modele1)  ols_plot_resid_qq(modele1)  ols_plot_resid_stud_fit(modele2)  ols_plot_resid_qq(modele2)  ols_plot_resid_stud_fit(modele3)  ols_plot_resid_qq(modele3)</code></p>
+<h1>7 Sélections pas à pas</h1>
+<p><strong>Both</strong> <code>{r} #Sélection pas à pas both &lt;- step(modeleAll,          direction = &quot;both&quot;, scope = formula(modeleAll),          test =&quot;F&quot;)</code></p>
+<p>```{r}</p>
+<h1>Résumé de la sélection pas à pas</h1>
+<p>both$anova</p>
+<h1>Coefficient du modèle selectionné</h1>
+<p>both$coefficients ``` both -&gt; log<em>price ~ bedrooms + bathrooms + sqft</em>living + sqft<em>lot + floors + waterfront + view + condition + grade + yr</em>built</p>
+<p>forward -&gt; price ~ grade + yr<em>built + sqft</em>living + view + floors + bathrooms + waterfront + condition + bedrooms + sqft_lot</p>
+<p>log<em>price ~ bedrooms + bathrooms + sqft</em>living + sqft<em>lot + floors + waterfront + view + condition + grade + yr</em>built</p>
+<p>backward -&gt; price ~ bedrooms + sqft<em>living + sqft</em>lot + waterfront + view + grade + yr_built</p>
+<p>```{r}</p>
+<h1>Résultats des différents choix des modèles :</h1>
+<p>modele<em>both &lt;- lm(log</em>price ~ bedrooms + sqft<em>living + sqft</em>lot + waterfront + view + grade + yr<em>built, data = logement) summary(modele</em>both)</p>
+<p>anova(modele_both, modeleAll) ```</p>
+<h1>8 Prédictions</h1>
+<p><strong>Création d&#39;un échantillion à partir des données initiales</strong> ```{r}</p>
+<h1>Import et visualisation des données</h1>
+<p>test &lt;- read<em>xlsx(&quot;kc</em>house<em>data</em>ech.xlsx&quot;)</p>
+<h1>Transformation de l&#39;unité des variables sqft<em>living et sqft</em>lot (en km²)</h1>
+<p>test$sqft<em>living = round(test$sqft</em>living*indice<em>metre2, digits = 2) test$sqft</em>lot = round(test$sqft_lot*indice_metre2, digits = 2)</p>
+<h1>Transformation de la variable id (numéro des logements) en caractère</h1>
+<p>test$id = as.character(test$id)</p>
+<h1>Transformation variable price avec la fonction logarithme</h1>
+<p>test$log_price &lt;- log(test$price) ```</p>
+<p><code>{r} modeleFinal = modele1 summary(modeleFinal) test$log_predictions &lt;- predict(modeleFinal, newdata = test)</code></p>
+<p><code>{r} test$predictions &lt;- exp(test$log_predictions)</code></p>
+<p>```{r} rmse<em>modeleF &lt;- rmse(test$log</em>price, test$log<em>predictions) rmse</em>modele2 &lt;- rmse(test$log<em>price, predict(modele2, newdata = test)) rmse</em>modele3 &lt;- rmse(test$log<em>price, predict(modele3, newdata = test)) rmse</em>modeleF rmse<em>modele2 rmse</em>modele3</p>
+<p>plot(x=test$log<em>price, y=test$log</em>predictions, xlim=c(10,15), ylim=c(10,15)) abline(a = 0, b=1) ```</p>
+<p><strong>Verification des valeurs</strong> ```{r}</p>
+<h1>Vérification si les individus du test sont représentatifs de notre échantillon de base</h1>
+<p>res = predict(modeleFinal, newdata = logement) restest = predict(modeleFinal, newdata = test) plot(res, logement$log<em>price, pch=16) points(restest,test$log</em>price, col=4) abline(a = 0, b=1, col=2) ```</p>
+<p>```{r}</p>
+<h1>Tester les valeurs de prédictions avec les vraies valeurs</h1>
+<p>head(test$predictions, n = 10) head(test$price, n = 10)</p>
+<p>```</p>
